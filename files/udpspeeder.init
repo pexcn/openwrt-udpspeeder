@@ -20,6 +20,19 @@ append_param() {
 	procd_append_param command "$switch" "${_loctmp:-$default}"
 }
 
+append_param_if_not_eq() {
+	local section="$1"
+	local option="$2"
+	local switch="$3"
+	local compare="$4"
+	local _loctmp
+	config_get _loctmp "$section" "$option"
+	[ -n "$_loctmp" ] || return 0
+	[ "$_loctmp" != "$compare" ] && {
+		procd_append_param command "$switch" "$_loctmp"
+	}
+}
+
 start_udpspeeder() {
 	local enable
 	config_get_bool enable $1 enable
@@ -32,8 +45,34 @@ start_udpspeeder() {
 	procd_set_param limits nofile="65535 65535"
 
 	procd_set_param command /usr/bin/udpspeeder
-	procd_append_param command "-c"
-	# TODO: append_param $1 local_address "-l"
+
+	# running mode
+	local mode_val
+	config_get mode_val $1 "mode" "client"
+	local mode_param
+	if [ "$mode_val" = "client" ]; then
+		mode_param="-c"
+	elif [ "$mode_val" = "server" ]; then
+		mode_param="-s"
+	else
+		mode_param="-c"
+	fi
+	procd_append_param command "$mode_param"
+
+	# common options
+	append_param $1 local_address "-l"
+	append_param $1 remote_address "-r"
+
+	# fec options
+	append_param_if_not_eq $1 fec_mode "--mode" "0"
+	append_param $1 fec_param "-f"
+	append_param_if_not_eq $1 fec_timeout "--timeout" "8"
+
+	# other options
+	append_param_if_not_eq $1 mtu "--mtu" "1250"
+	append_param_if_not_eq $1 log_level "--log-level" "4"
+	procd_append_param command "--disable-obscure"
+	procd_append_param command "--disable-checksum"
 
 	procd_close_instance
 }
